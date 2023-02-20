@@ -7,43 +7,7 @@ import sys
 
 import torch
 from utils import load_model
-
-class Cities():
-    def __init__(self,num_cities):
-        self.num_cities = num_cities
-        self.pos =self.__generate(self.num_cities)
-    
-    
-    def __generate(self,num_node):
-        np.random.seed(0)
-        return np.random.rand(num_node,2)
-    
-    # calculate the distance between the cities
-    def distance(self):
-        pos = self.position()
-        nrow, ncol = self.num_cities,self.num_cities
-        distance = np.zeros((nrow, ncol),dtype=np.float64)
-        for i in range(nrow):
-            for j in range(ncol):
-                temp_distance=np.power(pos[i,0]-pos[j,0],2)+np.power(pos[i,1]-pos[j,1],2)
-                temp_distance =np.power(temp_distance,0.5)
-                distance[i,j] = float(temp_distance)
-        
-        return distance
-                
-    
-    def position(self):
-        return self.pos
-    
-        
-    
-    def plot_nodes(self):
-        # self.pos :[num_node,2]
-        plt.xlabel('x-coordinate'),plt.ylabel('y-coordinate')
-        plt.title('TSP-Nodes')
-        pos = self.position()
-        plt.scatter(self.pos[:,0],self.pos[:,1])
-        plt.savefig('node.jpg')
+from preprocess import Cities
 
 class Ant(object):
     
