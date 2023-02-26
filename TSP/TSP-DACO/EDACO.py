@@ -171,14 +171,95 @@ class EDACO(object):
         for group in self.groups:
             tour_indexes =self.get_model_solution(group)
             groups_tour.append([group[i] for i in tour_indexes])
+        self.groups_tour = groups_tour
+        # # 简单策略， 将每一个组的最后一个值，与紧随其后的一个组的第一个值进行组合    
+        # tour = []
+        # for group in groups_tour:
+        #     for node_num in group:
+        #         tour.append(node_num)
         
-        # 简单策略， 将每一个组的最后一个值，与紧随其后的一个组的第一个值进行组合    
+        # 贪婪策略， 查找两个组中最近的距离
+        def get_min_distance_between_groups(group_i, group_j):
+            distance = self.cities.distance()
+            minDist = np.finfo(np.float64).max
+            node_1, node_2 = -1,-1
+            for first in group_i:
+                for second in group_j:
+                    if minDist > distance[first, second]:
+                        node_1, node_2 = first, second
+                        minDist = distance[first,second]
+            if node_1 < 0 or node_2 < 0:
+                print(f'Could find a vilid minimum distance between group {group_i} and group {group_j}')
+                exit(-1)
+            return node_1,node_2
+                    
+                    
         tour = []
-        for group in groups_tour:
-            for node_num in group:
-                tour.append(node_num)
+        
+        for i in range(len(groups_tour)):
+            if i == 0:
+                group_first = groups_tour[0]
+            else:
+                group_second = groups_tour[i]
+                (node_1, node_2) = get_min_distance_between_groups(group_first, group_second)
+                node_1_index = group_first.index(node_1)
+                node_2_index = group_second.index(node_2)
+                # 按照重连接节点，将两个组划分为四个部分
+                group_first_front=copy.deepcopy(group_first[:node_1_index]) # [0:node_1_index-1]
+                group_first_tail= copy.deepcopy(group_first[node_1_index+1:]) # [node_1_index+1:]
+                group_second_front=copy.deepcopy(group_second[:node_2_index]) # [0:node_2_index-1]
+                group_second_tail= copy.deepcopy(group_second[node_2_index+1:]) # [node_2_index+1:]
+                
+                # print(f'group_first_front:{group_first_front}')
+                # print(f'group_second_tail:{group_second_tail}')
+                # print(f'group_second_front.reverse:{group_second_front[::-1]}')
+                # print(f'group_first_tail:{group_first_tail}')
+                
+                assert len(set(group_first_front)) == len(group_first_front), 'group_first_font 存在重复元素'
+                assert len(set(group_first_tail)) == len(group_first_tail), 'group_first_tail 存在重复元素'
+                assert len(set(group_second_front)) == len(group_second_front), 'group_second_front 存在重复元素'
+                assert len(set(group_second_tail)) == len(group_second_tail), 'group_second_tail 存在重复元素'
+                # 四种方案中选择最优的路径
+                tour_1 = group_first_front + list([node_1, node_2]) + group_second_tail + group_second_front[::-1]+ group_first_tail
+                tour_2 = group_first_front + list([node_1, node_2]) + group_second_front[::-1] + group_second_tail + group_first_tail
+                tour_3 = group_first_front + group_second_front[::-1] + group_second_tail[::-1] + list([node_2,node_1]) + group_first_tail
+                tour_4 = group_first_front + group_second_tail + group_second_front + list([node_2, node_1]) + group_first_tail
+                
+                assert len(set(tour_1)) == len(tour_1), 'tour_1 存在重复元素'
+                assert len(set(tour_2)) == len(tour_2), 'tour_2 存在重复元素'
+                assert len(set(tour_3)) == len(tour_3), 'tour_3 存在重复元素'
+                assert len(set(tour_4)) == len(tour_4), 'tour_4 存在重复元素'
+                def get_tour_distance(tour):
+                    temp_distance = 0.0
+                    distance = self.cities.distance()
+                    for i in range(1, len(tour)):
+                        start, end = tour[i], tour[i-1]
+                        temp_distance += distance[start][end]
+                    
+                    # 回路
+                    end = tour[0]
+                    temp_distance += distance[start][end]
+                    
+                    return temp_distance
+                tour_list = [tour_1,tour_2, tour_3, tour_4]
+                tour_distance=[get_tour_distance(path) for path in tour_list]
+                best_tour = tour_list[tour_distance.index(min(tour_distance))]
+                group_first = copy.deepcopy(best_tour)
+                tour = copy.deepcopy(best_tour)
+                # temp = []
+                # for i1 in range(len(group_first)):
+                #     temp.append(group_first[i1])
+                #     if group_first[i1] == node_1:
+                #         node_2_index = group_second.index(node_2)
+                #         for i2 in range(len(group_second)):
+                #             temp.append(group_second[(i2+node_2_index)%len(group_second)])
+                # group_first = copy.deepcopy(temp)
+                # tour = copy.deepcopy(temp)
+                          
         print(f'Combined tour is\t {tour}')             
         return tour
+    
+        
       
               
     def make_oracle(self,group,temperature=1.0):
@@ -244,22 +325,34 @@ class EDACO(object):
         model_path = self.model_ant.path
         
         fig,((ax1),(ax2))=plt.subplots(2,1,figsize=(15,30),sharex=True,sharey=False) 
-        for i in range(1+len(path)):
-            if i == len(path):
+        for i in range(1+len(model_path)):
+            if i == len(model_path):
                 break
             ax1.plot([pos[model_path[i],0],pos[model_path[i-1],0]], [pos[model_path[i],1],pos[model_path[i-1],1]], color='y')
-            ax1.scatter(pos[path[i]-1,0], pos[path[i]-1,1], color='b')
+            ax1.scatter(pos[model_path[i]-1,0], pos[model_path[i]-1,1], color='b')
         # plt.set_title('{} nodes, total length {:.2f}'.format(len(self.tour), self.total_distance))
         ax1.set_title('model length {:.2f}'.format(self.model_ant.total_distance))
-        for i in range(1+len(path)):
-            if i == len(path):
+        for i in range(1+len(best_path)):
+            if i == len(best_path):
                 break
             ax2.plot([pos[best_path[i],0],pos[best_path[i-1],0]], [pos[best_path[i],1],pos[best_path[i-1],1]], color='r')
-            ax2.scatter(pos[path[i]-1,0], pos[path[i]-1,1], color='b')
+            ax2.scatter(pos[best_path[i]-1,0], pos[best_path[i]-1,1], color='b')
             
         ax2.set_title('daco length {:.2f}'.format(self.best_ant.total_distance))
         plt.savefig('path-100.jpg')
-        plt.show()            
+        plt.show()
+        
+    def plot_groups(self,colors=None):
+        assert len(self.groups_tour)==len(colors), 'Dismatch of the len of groups_tours and colors'
+        pos = self.cities.position()
+        plt.figure(figsize=(15,15))
+        for group, color in zip(self.groups_tour ,colors):
+            for i in range(1, len(group)):
+               plt.plot([pos[group[i],0],pos[group[i-1],0]], [pos[group[i],1],pos[group[i-1],1]], color=color)
+               plt.scatter(pos[group[i]-1,0], pos[group[i]-1,1], color='b')
+            plt.plot([pos[group[i],0],pos[group[0],0]], [pos[group[i],1],pos[group[0],1]], color=color)
+        plt.savefig('path-cluster-results.jpg')
+                     
     
                 
     
@@ -284,5 +377,7 @@ if __name__ == '__main__':
    best_ant, cost, path = daco.search_path()
    print(f'cost;{cost}\t paht:{path}')
    daco.plot_path()
+   colors =['#c72e29','#098154','#fb832d', 'red', 'blue']#三种不同颜色
+   daco.plot_groups(colors)
           
         

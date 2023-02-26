@@ -47,7 +47,13 @@ def rearrange_to_groups(clalist, centroids, group_size):
                 distance[minDistIndices] = np.finfo(np.float64).max
                 
     return groups
-    
+
+def get_groups(clalist, centroids):
+    groups = [[] for _ in range(len(centroids))]
+    minDistIndices = np.argmin(clalist, axis=1)  
+    for i, j in enumerate(minDistIndices):   #enymerate()可同时遍历索引和遍历元素
+        groups[j].append(i) 
+    return groups
 
 # k-means
 def kmeans(nodes, k, group_size):
@@ -64,7 +70,8 @@ def kmeans(nodes, k, group_size):
     # Get the node closest to the centroids
     clalist = calcDis(nodes, centroids, k) 
     
-    groups = rearrange_to_groups(clalist, centroids, group_size)
+    # groups = rearrange_to_groups(clalist, centroids, group_size)
+    groups = get_groups(clalist, centroids)
         
     return centroids, groups
 
