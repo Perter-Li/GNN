@@ -4,6 +4,7 @@ import copy
 import matplotlib.pyplot as plt
 from functools import reduce
 import sys
+import seaborn as sns
 
 import torch
 from utils import load_model
@@ -137,7 +138,7 @@ class DACO(object):
         model_path = self.get_model_solution()
         self.best_ant.update(model_path)
         self.model_ant =copy.deepcopy(self.best_ant)
-        
+        self.fitness_value_lst =[]
         for generation in range(self.generations):
             # 遍历每一只蚂蚁
             for ant in self.ants:
@@ -147,10 +148,13 @@ class DACO(object):
                 if ant.total_distance < self.best_ant.total_distance:
                     # 更新最优解
                     self.best_ant = copy.deepcopy(ant)
+            self.fitness_value_lst.append(self.best_ant.total_distance)
             print(f'Generation:{generation+1}, cost:{self.best_ant.total_distance}')
             self.__update_pheromone()
         
         return self.best_ant, self.best_ant.total_distance, self.best_ant.path  
+    
+    
         
         
     
@@ -242,8 +246,21 @@ class DACO(object):
             ax2.scatter(pos[path[i]-1,0], pos[path[i]-1,1], color='b')
             
         ax2.set_title('daco length {:.2f}'.format(self.best_ant.total_distance))
-        plt.savefig('path-100.jpg')
-        plt.show()            
+        plt.savefig(f'(daco)path-{self.city_num}.jpg')
+        plt.show()     
+        
+    def plot_loss(self):
+         #绘图    
+        sns.set_style('whitegrid')
+        # plt.rcParams['font.sans-serif'] = 'SimHei'  # 设置中文显示
+        # plt.rcParams['axes.unicode_minus'] = False
+        plt.figure(2)
+        plt.plot(range(1,1+len(self.fitness_value_lst)), self.fitness_value_lst)
+        plt.title('Process')
+        plt.ylabel('Optimal')
+        plt.xlabel('Iteration({}->{})'.format(0, len(self.fitness_value_lst)))
+        plt.savefig(f'(daco-loss)path-{self.city_num}.jpg')
+        # plt.show()       
     
                 
     
@@ -254,18 +271,19 @@ class DACO(object):
 if __name__ == '__main__':
    # ACO Configuration
    (alpha, beta, rho, q) = (1.0,2.0,0.5,100.0) 
-   (city_num, ant_num) = (100,50)
+   (city_num, ant_num) = (50,50)
    generations = 200
    cities = Cities(city_num)
    pheromone = np.full((city_num,city_num),1.0)
    
    # Deep Model Configuration
-   model, _ = load_model('pretrained/tsp_100/epoch-99.pt')
+   model, _ = load_model('pretrained/tsp_50/epoch-99.pt')
    model.eval()  # Put in evaluation mode to not track gradients
    daco = DACO(generations,model,cities,pheromone,ant_num,city_num,alpha,beta,rho,q)
    
    best_ant, cost, path = daco.search_path()
    print(f'cost;{cost}\t paht:{path}')
    daco.plot_path()
+   daco.plot_loss()
           
         
