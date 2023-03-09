@@ -102,7 +102,7 @@ class Ant(object):
     def __move(self, next_city):
         self.path.append(next_city)
         self.open_table_city[next_city] = False
-        self.total_distance += self.distance[self.current_city][next_city]
+        # self.total_distance += self.distance[self.current_city][next_city]
         self.current_city = next_city
         self.move_count += 1
         
@@ -114,8 +114,7 @@ class Ant(object):
             # 移动到下一个城市
             next_city = self.__choice_next_city(pheromone)
             self.__move(next_city)
-        
-        self.__cal_total_distance()
+        self.total_distance=self.__cal_total_distance()
         
         
 
@@ -133,12 +132,31 @@ class DACO(object):
        self.ants = [Ant(ID,self.ALPHA,self.BETA,self.cities) for ID in range(ant_num)]
        self.best_ant = Ant(-1,self.ALPHA,self.BETA,self.cities)
        self.best_ant.total_distance = 1 << 31
+       
+       self.distance = self.cities.distance()
+    
+    def cost(self, route):
+        temp_distance = 0.0
+        
+        for i in range(1, self.city_num):
+            start, end = route[i], route[i-1]
+            temp_distance += self.distance[start][end]
+        
+        # 回路
+        end = route[0]
+        temp_distance += self.distance[start][end]
+        
+        return temp_distance
     
     def search_path(self):
         # model_path = self.get_model_solution()
         # self.best_ant.update(model_path)
         self.model_ant =copy.deepcopy(self.best_ant)
+      
+        ref_model_path = self.get_model_solution(list(range(self.city_num)))
+        self.model_ant.update(ref_model_path)
         self.fitness_value_lst =[]
+        num_nodes = 20
         for generation in range(self.generations):
             # 遍历每一只蚂蚁
             for ant in self.ants:
@@ -148,31 +166,111 @@ class DACO(object):
                 if ant.total_distance < self.best_ant.total_distance:
                     # 更新最优解
                     self.best_ant = copy.deepcopy(ant)
+            if generation%10==0:
+                num_nodes += 4
+                num_inner = 6
+                print(f'Start model adjust...')
+                print(f'Partial Nodes: {num_nodes}')
+                for i in range(num_inner):
+                    best_path = self.best_ant.path
+                    # 利用图神经模型进行局部调优
+                    model_adjust_route = self.update_partial_route(num_nodes, best_path)
+                    assert len(set(model_adjust_route)) == len(model_adjust_route), 'model_adjust_route 存在重复元素'
+                    assert len(set(self.best_ant.path)) == len(self.best_ant.path), 'self.best_ant.path 存在重复元素'
+                    model_cost = self.cost(model_adjust_route)
+                    best_ant_cost = self.cost(self.best_ant.path)
+                    if model_cost < best_ant_cost:
+                        self.best_ant.update(model_adjust_route)
+                        print(f'Valid model update.')
+        
             self.fitness_value_lst.append(self.best_ant.total_distance)
             print(f'Generation:{generation+1}, cost:{self.best_ant.total_distance}')
             self.__update_pheromone()
         
         return self.best_ant, self.best_ant.total_distance, self.best_ant.path  
     
-    
+    # 获取best_ant中路径的一部分
+    def update_partial_route(self, num_nodes, path):
+        best_path = copy.deepcopy(path)
+        route_len = len(best_path)
+        # 随机设定一个起点si，选择从si+1开始的共num_nodes个节点，倘若到达数组末尾，则从索引0开始
+        si = random.randint(0, route_len - 1)
+        partial_route =[best_path[(si+i+1)%route_len] for i in range(num_nodes)]
+        ei = (si + num_nodes +1)%route_len
         
+        model_solution = self.get_model_solution(partial_route)
         
+        # 将model产生的解进行拼接， 拼接的方式不是任意的，需要考虑最小距离
+        new_partial_route = self.get_min_distance_node_pair(model_solution, best_path[si], best_path[ei])
+        new_route = copy.deepcopy(best_path)
+        for i in range(num_nodes):
+            new_route[(i+si+1)%route_len] = new_partial_route[i] 
+        
+        return new_route
     
-    def get_model_solution(self):
+    def get_min_distance_node_pair(self, route, v1, v2):
+        # 获取route中到v1,v2中距离最小的边
+        distance = self.cities.distance()
+        edges = np.zeros((len(route),2), dtype = np.int32)
+        for i, node_num in enumerate(route):
+            edges[i][0] =  route[i]
+            edges[i][1] = route[(i+1)%len(route)]
+        
+        minDist = np.finfo(np.float64).max
+        start, end = -1, -1    
+        for edge in edges:
+            n1, n2 = edge
+            dis1=distance[v1][n1] + distance[v2][n2]-distance[n1][n2]
+            dis2= distance[v1][n2] + distance[v2][n1] - distance[n1][n2]
+            if min(dis1 ,dis2) < minDist:
+                minDist = min(dis1, dis2)
+                if dis1 < dis2:
+                    start = n1
+                    end = n2
+                else:
+                    start = n2
+                    end = n1
+                    
+        si = route.index(start)
+        ei = route.index(end)
+        
+        if route[(si+1)%len(route)] == end:
+            new_route = list([route[si]])+ list(reversed(route[:si])) + list(reversed(route[ei:]))
+        else:
+            new_route = list(route[si::]) + list(route[:ei]) + list([route[ei]])
+        
+        return copy.deepcopy(new_route) 
+                
+            
+            
+        
+    def get_model_solution(self, partial_route):
+        # tour只能记录partial_route中的节点的索引序号
         tour = []
-        oracle = self.make_oracle()
-        while(len(tour) < self.city_num):
+        oracle = self.make_oracle(partial_route)
+        while(len(tour) < len(partial_route)):
             p = oracle(tour)
             # Greedy
             i = np.argmax(p)
             tour.append(i)
-            
-        return tour
-            
-    def make_oracle(self,temperature=1.0):
-        num_nodes = self.city_num
+        # 在这里对应成正确的节点
+        new_route = [partial_route[node_num] for node_num in tour]    
+        return new_route
     
-        xyt = torch.tensor(self.cities.position()).float()[None]  # Add batch dimension
+    
+            
+    def make_oracle(self, partial_route,temperature=1.0):
+        
+        def get_partial_postion(partial_route):
+            route_pos = np.zeros((len(partial_route),2), dtype = np.float64)
+            for i, node_num in enumerate(partial_route):
+                route_pos[i] = self.cities.pos[node_num]
+            return route_pos
+            
+        partial_pos= get_partial_postion(partial_route)
+        
+        num_nodes = len(partial_route)
+        xyt = torch.tensor(partial_pos).float()[None]  # Add batch dimension
         
         with torch.no_grad():  # Inference only
             embeddings, _ = self.model.embedder(self.model._init_embed(xyt))
@@ -232,18 +330,18 @@ class DACO(object):
         model_path = self.model_ant.path
         
         fig,((ax1),(ax2))=plt.subplots(2,1,figsize=(15,30),sharex=True,sharey=False) 
-        for i in range(1+len(path)):
-            if i == len(path):
+        for i in range(1+len(model_path)):
+            if i == len( model_path):
                 break
             ax1.plot([pos[model_path[i],0],pos[model_path[i-1],0]], [pos[model_path[i],1],pos[model_path[i-1],1]], color='y')
-            ax1.scatter(pos[path[i]-1,0], pos[path[i]-1,1], color='b')
+            ax1.scatter(pos[ model_path[i]-1,0], pos[ model_path[i]-1,1], color='b')
         # plt.set_title('{} nodes, total length {:.2f}'.format(len(self.tour), self.total_distance))
         ax1.set_title('model length {:.2f}'.format(self.model_ant.total_distance))
-        for i in range(1+len(path)):
-            if i == len(path):
+        for i in range(1+len(best_path)):
+            if i == len(best_path):
                 break
             ax2.plot([pos[best_path[i],0],pos[best_path[i-1],0]], [pos[best_path[i],1],pos[best_path[i-1],1]], color='r')
-            ax2.scatter(pos[path[i]-1,0], pos[path[i]-1,1], color='b')
+            ax2.scatter(pos[best_path[i]-1,0], pos[best_path[i]-1,1], color='b')
             
         ax2.set_title('daco length {:.2f}'.format(self.best_ant.total_distance))
         plt.savefig(f'(daco)path-{self.city_num}.jpg')

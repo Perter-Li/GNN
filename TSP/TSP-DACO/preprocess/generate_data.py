@@ -12,14 +12,9 @@ class Cities():
     def __init__(self,num_cities):
         self.num_cities = num_cities
         self.pos =self.__generate(self.num_cities)
-    
-    
-    def __generate(self,num_node):
-        np.random.seed(0)
-        return np.random.rand(num_node,2)
-    
-    # calculate the distance between the cities
-    def distance(self):
+        self._distance = self.caldistance()
+        
+    def caldistance(self):
         pos = self.position()
         nrow, ncol = self.num_cities,self.num_cities
         distance = np.zeros((nrow, ncol),dtype=np.float64)
@@ -30,6 +25,15 @@ class Cities():
                 distance[i,j] = float(temp_distance)
         
         return distance
+    
+    
+    def __generate(self,num_node):
+        np.random.seed(0)
+        return np.random.rand(num_node,2)
+    
+    # calculate the distance between the cities
+    def distance(self):
+        return self._distance
                 
     
     def position(self):
